@@ -1,0 +1,29 @@
+#!groovy
+// The above triggers groovy syntax highlighting in vim
+
+group "com.github.jlgrock.autograder"
+version "$projVersion"
+
+apply plugin: 'groovy'
+
+defaultTasks 'clean', 'check', 'install'
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
+
+dependencies {
+    compile 'com.spotify:docker-client:2.7.7'
+    compile 'org.codehaus.groovy:groovy-all:2.3.6'
+}
+
+//Define how wrapper is used.  This allows you to create a batch file/shell script using 'gradle createWrapper'
+//that can be checked in to your SCM so that machines that do not have gradle installed can execute
+//the build.
+task wrapper(type: Wrapper) {
+    gradleVersion = "${gradleVersion}"
+}
