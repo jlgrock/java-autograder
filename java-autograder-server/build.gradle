@@ -3,9 +3,13 @@ buildscript {
         maven { url "http://repo.spring.io/libs-snapshot" }
         mavenLocal()
         mavenCentral()
+        jcenter()
     }
     dependencies {
-        classpath("org.springframework.boot:spring-boot-gradle-plugin:1.0.1.RELEASE")
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:1.0.1.RELEASE"
+        classpath 'com.eriwen:gradle-css-plugin:1.11.1'
+        classpath 'com.eriwen:gradle-js-plugin:1.12.0'
+        classpath 'com.bluepapa32:gradle-watch-plugin:0.1.4'
     }
 }
 
@@ -13,24 +17,33 @@ plugins {
     id "io.spring.dependency-management" version "0.4.0.RELEASE"
 }
 
-version "0.1"
+version projVersion
 group "com.github.jlgrock.autograder"
 
-
+// IDE plugins
 apply plugin: 'groovy'
 apply plugin: 'eclipse'
 apply plugin: 'idea'
+
+// tool for running spring boot environment
 apply plugin: 'spring-boot'
+
+
+// Plugin that watches your files and automatically recompiles
+apply plugin: 'com.bluepapa32.watch'
+
+
+// standard web packaging and deployment
 apply plugin: 'war'
+apply plugin: 'jetty'
+apply plugin: 'js'
+apply plugin: 'css'
+
 
 ext {
     gradleWrapperVersion = project.gradleWrapperVersion
 }
 
-//assets {
-//    minifyJs = true
-//    minifyCss = true
-//}
 
 repositories {
     mavenCentral()
@@ -80,8 +93,121 @@ dependencies {
 
 }
 
+
+jettyRun {
+    reload = "automatic"
+    scanIntervalSeconds = 1
+}
+
+def webDir = "src/main/webapp"
+def appDir = "${webDir}/app"
+
+combineJs {
+    group = null // hides from the 'gradle tasks'
+
+    // pull together the source from string & file lists
+    //  eg. def core = ["$webAppDirName/init.js",...]
+    source = ["${appDir}/app.js"] +
+            fileTree(dir: "${appDir}/directives", include: "**/*.js" ) +
+            fileTree(dir: "${appDir}/services", include: "**/*.js" ) +
+            fileTree(dir: "${appDir}/controllers", include: "**/*.js" )
+
+    include "*.js"
+    exclude "*.min.js"
+
+    // show the resolved files when gradle is run with -d
+    source.each{ logger.debug ("$it") }
+
+    dest = file("${buildDir}/js/${projName}.${version}.js")
+}
+
+combineCss {
+    group = null // hides from the 'gradle tasks'
+
+    source = ["${webDir}/css"]
+    dest = "${buildDir}/all.css"
+
+    source.each { logger.info "Combining $it"}
+}
+
+task combine(dependsOn: [combineJs, combineCss]) {
+    group = "Build"
+    description = "Combine all appropraite JavaScript files and all appropriate CSS files"
+}
+
+minifyJs {
+    group = null // hides from the 'gradle tasks'
+    it.dependsOn tasks.combineJs
+
+    source = combineJs
+    dest = file("${buildDir}/js/${projName}.${version}.min.js")
+    sourceMap = file("${buildDir}/js/${projName}.${version}.sourcemap.json")
+    closure {
+        warningLevel = 'QUIET'
+        //compilerOptions.defineReplacements = ['MY_DBUG_FLAG':false]
+    }
+}
+
+minifyCss {
+    group = null // hides from the 'gradle tasks'
+    it.dependsOn combineCss
+
+    source = combineCss
+    dest = "${buildDir}/css/${projName}.${version}.min.css"
+    yuicompressor { // Optional
+        lineBreakPos = -1
+    }
+}
+
+task minify(dependsOn: [minifyJs, minifyCss]) {
+    group = "Build"
+    description = "Minify both the JavaScript and CSS files"
+}
+
+gzipJs {
+    group = null // hides from the 'gradle tasks'
+    it.dependsOn tasks.minifyJs
+
+    source = minifyJs.dest
+    dest = file("${buildDir}/js/${projName}.${version}.min.js.gz")
+}
+
+gzipCss {
+    group = null // hides from the 'gradle tasks'
+    it.dependsOn tasks.minifyCss
+
+    source = minifyCss
+    dest = "${buildDir}/css/${projName}.${version}.min.css.gz"
+}
+
+task gzip(dependsOn: [gzipJs, gzipCss]) {
+    group = "Build"
+    description = "Gzip both the JavaScript and CSS files"
+}
+
 task wrapper(type: Wrapper) {
     gradleVersion = gradleWrapperVersion
 }
 
+war {
+    it.dependsOn tasks.gzip
 
+    from( "${buildDir}/js", {
+        into "minified"
+    })
+    from( "${buildDir}/css", {
+        into "minified"
+    })
+}
+
+watch {
+    //it.dependsOn tasks['war']
+
+    war {
+        files fileTree(dir: 'src/main/groovy') +
+                fileTree(dir: 'src/main/java') +
+                fileTree(dir: 'src/main/webapp')
+                fileTree(dir: 'src/main/resources', include: '**/*.properties')
+        tasks 'war'
+    }
+}

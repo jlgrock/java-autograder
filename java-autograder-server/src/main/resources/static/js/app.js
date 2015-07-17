@@ -7,4 +7,7 @@ var courseModule = angular.module('com.github.jlgrock.autograder.course', [
     //'phonecatControllers',
     //'phonecatFilters',
     //'phonecatServices'
-]);
+]).courseModule.controller("HelloController", function($scope) {
+    $scope.helloTo = {};
+    $scope.helloTo.title = "World, AngularJS";
+});
